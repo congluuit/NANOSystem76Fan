@@ -61,7 +61,9 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Filename: "{sys}\schtasks.exe"; \
   Parameters: "/Create /F /TN ""{#TaskName}"" /SC ONLOGON /RL HIGHEST /DELAY 0000:10 /TR ""\""{app}\{#AppExe}\"" --minimized"""; \
   Flags: runhidden waituntilterminated; Tasks: autostart
-Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+; postinstall entries run as the original (non-elevated) user by default, and the app's
+; requireAdministrator manifest then fails with error 740. Reuse Setup's admin token instead.
+Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runascurrentuser
 
 [UninstallRun]
 Filename: "{app}\{#AppExe}"; Parameters: "--quit"; Flags: runhidden waituntilterminated; RunOnceId: "QuitApp"

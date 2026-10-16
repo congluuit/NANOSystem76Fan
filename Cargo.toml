@@ -1,6 +1,6 @@
 [package]
 name = "s76-fan-control"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Fan control for System76 laptops with System76 Open Firmware, on Windows"
 license = "MIT"
