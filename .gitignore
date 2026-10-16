@@ -1,0 +1,4 @@
+/target
+*.bmp
+config.toml
+diag.txt
