@@ -36,6 +36,13 @@ pub enum DeviceScan {
     Done(Result<Vec<ProblemDevice>, String>),
 }
 
+/// Requests from other processes: a second launch (show) or `--quit`.
+#[derive(Default)]
+pub struct Signals {
+    pub show: AtomicBool,
+    pub quit: AtomicBool,
+}
+
 pub struct FanApp {
     cfg: Config,
     sent: Config,
@@ -46,7 +53,7 @@ pub struct FanApp {
     page: Page,
     tray: Option<Tray>,
     tray_rx: Option<Receiver<TrayAction>>,
-    show_requested: Arc<AtomicBool>,
+    signals: Arc<Signals>,
     quitting: bool,
     curve_drag: Option<usize>,
     autostart: bool,
@@ -60,7 +67,7 @@ pub struct FanApp {
 impl FanApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
-        show_requested: Arc<AtomicBool>,
+        signals: Arc<Signals>,
         screenshot_dir: Option<std::path::PathBuf>,
     ) -> Self {
         let ctx = cc.egui_ctx.clone();
@@ -90,7 +97,7 @@ impl FanApp {
             page: Page::Dashboard,
             tray,
             tray_rx,
-            show_requested,
+            signals,
             quitting: false,
             curve_drag: None,
             autostart: platform::autostart_enabled(),
@@ -249,8 +256,11 @@ impl eframe::App for FanApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.status = self.controller.status();
 
-        if self.show_requested.swap(false, Ordering::SeqCst) {
+        if self.signals.show.swap(false, Ordering::SeqCst) {
             Self::show_window(ctx);
+        }
+        if self.signals.quit.swap(false, Ordering::SeqCst) {
+            self.quit(ctx);
         }
         let actions: Vec<TrayAction> = self.tray_rx.as_ref().map(|rx| rx.try_iter().collect()).unwrap_or_default();
         for action in actions {

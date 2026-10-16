@@ -6,7 +6,7 @@ use std::process::Command;
 
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE};
 use windows_sys::Win32::System::Threading::{
-    CreateEventW, CreateMutexW, EVENT_MODIFY_STATE, INFINITE, OpenEventW, SetEvent, WaitForSingleObject,
+    CreateEventW, CreateMutexW, EVENT_MODIFY_STATE, INFINITE, OpenEventW, OpenMutexW, SetEvent, WaitForSingleObject,
 };
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -16,6 +16,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const INSTANCE_MUTEX: &str = "Local\\S76FanControl-rs.Instance";
 const SHOW_EVENT: &str = "Local\\S76FanControl-rs.Show";
+const QUIT_EVENT: &str = "Local\\S76FanControl-rs.Quit";
+const SYNCHRONIZE: u32 = 0x0010_0000;
 const TASK_NAME: &str = "S76FanControl";
 
 fn wide(s: &str) -> Vec<u16> {
@@ -40,7 +42,7 @@ impl SingleInstance {
             if !handle.is_null() {
                 unsafe { CloseHandle(handle) };
             }
-            signal_existing_instance();
+            signal_event(SHOW_EVENT);
             return None;
         }
         Some(Self(handle))
@@ -48,19 +50,49 @@ impl SingleInstance {
 
     /// Calls `on_show` (on a background thread) whenever a second instance is launched.
     pub fn listen_for_show(&self, on_show: impl Fn() + Send + 'static) {
-        let name = wide(SHOW_EVENT);
-        // SAFETY: auto-reset event, valid name.
-        let event = unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) } as usize;
-        if event == 0 {
-            return;
+        listen(SHOW_EVENT, on_show);
+    }
+
+    /// Calls `on_quit` (on a background thread) when `S76FanControl.exe --quit` runs.
+    pub fn listen_for_quit(&self, on_quit: impl Fn() + Send + 'static) {
+        listen(QUIT_EVENT, on_quit);
+    }
+}
+
+fn listen(event_name: &str, callback: impl Fn() + Send + 'static) {
+    let name = wide(event_name);
+    // SAFETY: auto-reset event, valid name.
+    let event = unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) } as usize;
+    if event == 0 {
+        return;
+    }
+    std::thread::spawn(move || {
+        loop {
+            // SAFETY: the event handle lives for the whole process.
+            unsafe { WaitForSingleObject(event as HANDLE, INFINITE) };
+            callback();
         }
-        std::thread::spawn(move || {
-            loop {
-                // SAFETY: the event handle lives for the whole process.
-                unsafe { WaitForSingleObject(event as HANDLE, INFINITE) };
-                on_show();
-            }
-        });
+    });
+}
+
+/// Asks a running instance to quit cleanly (fans back to auto) and waits up to
+/// `timeout` for it to exit. Returns true when no instance is running anymore.
+/// Used by the installer and uninstaller.
+pub fn request_quit(timeout: std::time::Duration) -> bool {
+    signal_event(QUIT_EVENT);
+    let name = wide(INSTANCE_MUTEX);
+    let start = std::time::Instant::now();
+    loop {
+        // SAFETY: valid name; the handle is closed right away.
+        let h = unsafe { OpenMutexW(SYNCHRONIZE, 0, name.as_ptr()) };
+        if h.is_null() {
+            return true;
+        }
+        unsafe { CloseHandle(h) };
+        if start.elapsed() > timeout {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }
 
@@ -71,8 +103,8 @@ impl Drop for SingleInstance {
     }
 }
 
-fn signal_existing_instance() {
-    let name = wide(SHOW_EVENT);
+fn signal_event(event_name: &str) {
+    let name = wide(event_name);
     // SAFETY: valid name; handle closed below.
     unsafe {
         let ev = OpenEventW(EVENT_MODIFY_STATE, 0, name.as_ptr());

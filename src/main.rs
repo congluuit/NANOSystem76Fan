@@ -3,7 +3,7 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
 use eframe::egui;
 use s76_fan_control::{diag, hw, icon_art, platform, ui};
@@ -15,6 +15,11 @@ fn main() {
     if has("--diag") {
         std::process::exit(diag::run(has("--test")));
     }
+    // Used by the installer/uninstaller: close a running instance cleanly.
+    if has("--quit") {
+        let closed = platform::request_quit(std::time::Duration::from_secs(10));
+        std::process::exit(if closed { 0 } else { 1 });
+    }
 
     let Some(instance) = platform::SingleInstance::acquire() else {
         return; // the running instance was asked to show itself
@@ -22,7 +27,7 @@ fn main() {
 
     install_panic_hook();
 
-    let show_requested = Arc::new(AtomicBool::new(false));
+    let signals = Arc::new(ui::Signals::default());
     let start_hidden = has("--minimized");
     // Hidden developer flag: `--screenshot <dir>` captures every page and exits.
     let screenshot_dir =
@@ -41,19 +46,22 @@ fn main() {
         ..Default::default()
     };
 
-    let flag = show_requested.clone();
     let result = eframe::run_native(
         "S76 Fan Control",
         options,
         Box::new(move |cc| {
-            let ctx = cc.egui_ctx.clone();
-            let f = flag.clone();
+            let (ctx, s) = (cc.egui_ctx.clone(), signals.clone());
             instance.listen_for_show(move || {
-                f.store(true, Ordering::SeqCst);
+                s.show.store(true, Ordering::SeqCst);
+                ctx.request_repaint();
+            });
+            let (ctx, s) = (cc.egui_ctx.clone(), signals.clone());
+            instance.listen_for_quit(move || {
+                s.quit.store(true, Ordering::SeqCst);
                 ctx.request_repaint();
             });
             std::mem::forget(instance); // keep the mutex for the life of the process
-            Ok(Box::new(ui::FanApp::new(cc, flag, screenshot_dir)))
+            Ok(Box::new(ui::FanApp::new(cc, signals, screenshot_dir)))
         }),
     );
     if let Err(e) = result {

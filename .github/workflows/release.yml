@@ -20,19 +20,33 @@ jobs:
       - name: Build
         run: cargo build --release
 
-      - name: Package
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
         shell: pwsh
         run: |
-          $name = "S76FanControl-${{ github.ref_name }}-windows-x64"
-          New-Item -ItemType Directory $name | Out-Null
-          Copy-Item target/release/S76FanControl.exe, target/release/inpoutx64.dll, README.md, LICENSE $name
-          Copy-Item vendor/inpout/LICENSE.txt "$name/LICENSE-InpOut.txt"
-          Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
-          (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" installer\S76FanControl.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $name = "S76FanControl-$version-portable"
+          New-Item -ItemType Directory "dist/$name" -Force | Out-Null
+          Copy-Item target/release/S76FanControl.exe, target/release/inpoutx64.dll, README.md "dist/$name"
+          Copy-Item LICENSE "dist/$name/LICENSE.txt"
+          Copy-Item vendor/inpout/LICENSE.txt "dist/$name/LICENSE-InpOut.txt"
+          Compress-Archive -Path "dist/$name/*" -DestinationPath "dist/$name.zip"
+          Remove-Item -Recurse "dist/$name"
+          Get-ChildItem dist -File | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+          } | Out-File -Encoding ascii dist/SHA256SUMS.txt
+          Get-ChildItem dist
 
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: |
-            S76FanControl-*.zip
-            S76FanControl-*.zip.sha256
+          files: dist/*

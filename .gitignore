@@ -1,4 +1,5 @@
 /target
+/dist
 *.bmp
 config.toml
 diag.txt

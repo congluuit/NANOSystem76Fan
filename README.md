@@ -1,164 +1,285 @@
-# S76 Fan Control
+# NANOSystem76Fan — S76 Fan Control for Windows
 
-Fan control for **System76 laptops running Windows** with **System76 Open Firmware**
-(coreboot + the open-source [System76 EC](https://github.com/system76/ec)).
+**Fan control for the System76 Adder WS (addw3) running Windows 10/11**, and for other
+System76 laptops with **System76 Open Firmware**.
 
-On Linux, System76 machines are handled by `system76-power` and the `system76-acpi`
-driver. Windows has no equivalent, so the fans run only on the EC's built-in curve. That
-curve reaches 100 % at 80 °C, which a modern Intel HX CPU passes even at idle under
-Windows. This tool lets you choose how the fans behave.
+[![CI](https://github.com/congluuit/NANOSystem76Fan/actions/workflows/ci.yml/badge.svg)](https://github.com/congluuit/NANOSystem76Fan/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/congluuit/NANOSystem76Fan)](https://github.com/congluuit/NANOSystem76Fan/releases/latest)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20x64-0078D6)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 ![Dashboard](docs/screenshots/dashboard.png)
+
+> **Disclaimer.** This is a community project. It is not affiliated with or endorsed by
+> System76. It writes to the laptop's embedded controller (EC), so you use it at your own
+> risk. The app always gives control back to the firmware when it exits, overheats or
+> cannot read the temperature.
+
+---
+
+## The problem
+
+The System76 **Adder WS (addw3)** ships with **Pop!_OS / Ubuntu**. On Linux, System76
+provides software that talks to the laptop's open-source embedded controller:
+`system76-power`, `system76-driver` and the `system76-acpi` kernel driver.
+
+**There is no Windows equivalent.** The official
+[system76/windows-drivers](https://github.com/system76/windows-drivers) repository only
+links addw3 to the generic Intel **RPL-HX** package: Chipset, Serial IO, Thunderbolt and
+Wi-Fi. It contains **no fan-control utility and no driver for the System76 ACPI device**,
+which shows up as an *Unknown device* (`ACPI\17761776`, code 28) in Device Manager.
+
+So on Windows 10 the fans are left entirely to the EC's built-in curve:
+
+| CPU temperature | 60 °C | 65 °C | 70 °C | 75 °C | 80 °C |
+|---|---|---|---|---|---|
+| Fan speed (addw3 firmware) | 40 % | 60 % | 75 % | 90 % | **100 %** |
+
+The i9-13900HX in the addw3 easily sits at 75–90 °C under Windows, even when nearly idle.
+On the author's machine, Task Manager showed only **3 % CPU load** while the EC reported
+**74–91 °C**, and both fans were stuck at **PWM 255 (100 %), about 6,900 / 7,100 RPM**.
+The fans are loud all the time, and Windows has no setting that changes it.
+
+## The solution
+
+**S76 Fan Control** talks to the System76 EC directly from Windows, the same way
+`system76_ectool` does on Linux. You choose how the fans behave:
+
+| Mode | What it does |
+|---|---|
+| **Auto** | The firmware controls the fans. This is the stock behaviour. |
+| **Fixed** | Both fans run at one constant speed that you choose. |
+| **Curve** | Your own temperature → speed curve. The speed rises at once when the CPU or GPU heats up, and falls slowly to avoid pumping. |
+
+Measured on the addw3 with this tool:
+
+| Setting | CPU fan | GPU fan |
+|---|---|---|
+| Firmware (stock) | ~6,900 RPM (100 %) | ~7,100 RPM (100 %) |
+| Fixed 30 % | ~2,470 RPM | ~2,550 RPM |
+| Curve "Balanced" at ~70 °C | ~3,700 RPM (47 %) | ~3,840 RPM (47 %) |
 
 | Fan curve editor | Drivers & tips |
 |---|---|
 | ![Curve](docs/screenshots/curve.png) | ![Drivers](docs/screenshots/drivers.png) |
 
-> **Disclaimer.** This is a community project. It is not affiliated with or endorsed by
-> System76. It writes to your embedded controller, so you use it at your own risk.
-
 ## Features
 
-- **Three control modes**
-  - **Auto**: the EC firmware controls the fans (the default behaviour).
-  - **Fixed**: one constant speed for both fans.
-  - **Curve**: speed follows a temperature curve that you edit. The curve uses the hotter
-    of CPU and GPU. Speed rises immediately and falls gradually.
-- **Interactive curve editor**: drag points, double-click to add a point, right-click to
-  remove one. Presets: Silent, Balanced, Performance, Firmware.
-- **Live dashboard**: CPU/GPU temperature, RPM and PWM of both fans, and a 5-minute history.
-- **Safety first**
-  - Control goes back to the EC above a configurable temperature (default 92 °C). It is
-    taken again only after a 5 °C drop.
-  - Control goes back to the EC if the CPU temperature cannot be read 5 times in a row.
-  - Control goes back to the EC when the app exits, and when the control thread panics.
-  - A minimum fan speed is enforced in manual modes.
+- **Live dashboard**: CPU and GPU temperature, RPM and PWM of both fans, and a 5-minute
+  history chart.
+- **Curve editor**: drag points, double-click to add one, right-click to remove one.
+  Presets are included: *Silent*, *Balanced*, *Performance*, and *Firmware* (the stock
+  curve).
+- **Safety**
+  - Control goes back to the firmware above a temperature you set (default **92 °C**),
+    and is taken again only after the temperature drops by 5 °C.
+  - Control goes back to the firmware if the CPU temperature cannot be read 5 times in a
+    row.
+  - Control goes back to the firmware when the app exits, crashes, or is closed by the
+    installer.
+  - A minimum fan speed is enforced in manual modes (default 20 %).
 - **Drivers & tips page**
-  - Links to the official [System76 Windows drivers](https://github.com/system76/windows-drivers)
-    for your model.
-  - Lists devices that have no driver, and explains the known harmless ones.
-  - Tips for a cooler and quieter machine.
-- **System tray**: switch modes, see temperatures in the tooltip, and close the window to
+  - Detects your model and links to the right official System76 driver package.
+  - Lists devices without a driver and explains the harmless ones.
+  - Shows tips that lower temperatures.
+- **System tray**: change modes, see temperatures in the tooltip, and close the window to
   the tray.
-- **Start with Windows**: uses a Task Scheduler logon task, so there is no UAC prompt at boot.
+- **Start with Windows** through a Task Scheduler logon task, so there is no UAC prompt at
+  every boot.
 - **English and Tiếng Việt**, dark and light themes.
-- Native, small and fast: a single ~6.5 MB Rust executable built with
-  [egui](https://github.com/emilk/egui), with no runtime to install.
+- A **single native executable of about 6.5 MB**, written in Rust with
+  [egui](https://github.com/emilk/egui). No .NET or other runtime is needed.
 
-## Supported hardware
+## Tested hardware
 
-The app works on System76 laptops that run **System76 Open Firmware**. When it starts, it
-probes the EC and refuses to run on anything else.
+| | |
+|---|---|
+| Model | System76 **Adder WS (addw3)** |
+| CPU / GPU | Intel Core i9-13900HX / NVIDIA GeForce RTX 4050 Laptop |
+| Firmware | System76 Open Firmware (coreboot) `2023-09-19_16ef69c` |
+| EC | System76 EC `system76/addw3`, protocol 1 |
+| OS | **Windows 10 Pro 22H2** (build 19045), x64 |
 
-It was developed and tested on an **Adder WS (addw3)**, EC firmware `2023-09-19_16ef69c`.
-Other Open Firmware models use the same EC interface and should work. Reports are welcome.
+### Other models
+
+The app checks for the System76 EC signature when it starts, and it refuses to run on any
+other hardware.
+
+Any System76 laptop with **System76 Open Firmware** uses the same EC command interface and
+should work. Examples: Adder WS addw2/addw4/addw5, Bonobo WS, Darter Pro, Galago Pro,
+Gazelle, Lemur Pro, Oryx Pro and Serval WS. Please
+[open an issue](https://github.com/congluuit/NANOSystem76Fan/issues/new?template=hardware-report.md)
+to report whether it works on your model.
+
+Machines that still run proprietary Insyde/AMI firmware are **not** supported.
 
 | EC firmware | Behaviour |
 |---|---|
-| 2025 and newer (has `FAN_SET_MODE`) | The EC is switched to manual PWM mode. Control is smooth and stable. |
-| Older | The EC rewrites the PWM on every fan tick (250 ms–1 s), so the app rewrites it every 40 ms. This works well: on addw3 the EC "wins" about 17 % of ticks, with no audible effect. |
-
-Machines with proprietary (Insyde/AMI) firmware are **not** supported.
+| 2025 or newer (has `FAN_SET_MODE`) | The EC is switched to host-PWM mode. Speed is rock-steady. |
+| Older (like the addw3 tested here) | The EC rewrites the PWM on every fan tick, so the app rewrites it every 40 ms. The EC wins only ~17 % of ticks, which you cannot hear. Updating the firmware gives the smoother mode. |
 
 ## Installation
 
-1. Download `S76FanControl-<version>-windows-x64.zip` from
-   [Releases](../../releases) and extract it to a permanent folder, for example
-   `C:\Program Files\S76FanControl`.
-2. Keep `inpoutx64.dll` next to `S76FanControl.exe`.
-3. Run `S76FanControl.exe` and accept the UAC prompt. Administrator rights are required
-   for port I/O.
-4. Optional: in **Settings**, enable **Start with Windows**.
+Download the latest release from the
+[**Releases page**](https://github.com/congluuit/NANOSystem76Fan/releases/latest).
 
-### Why InpOut?
+### Option A: installer (recommended)
 
-Windows does not allow normal programs to access I/O ports. The app uses
-[InpOut32/x64](https://www.highrez.co.uk/downloads/inpout32/) (MIT, by Phil Gibbons), a
-tiny DLL with an embedded, signed kernel driver that it installs on first use.
+1. Run **`S76FanControl-<version>-setup.exe`** and accept the UAC prompt.
+2. Keep **"Start with Windows"** checked if you want the app to start at logon, minimized to
+   the tray.
+3. Launch **S76 Fan Control** from the Start menu.
 
-If **Memory Integrity** (*Windows Security → Device security → Core isolation*) is
-enabled, Windows may refuse to load the driver. The dashboard then shows a "Cannot access
-the embedded controller" card.
+The installer and uninstaller close a running copy cleanly, so the fans are handed back to
+the firmware first. The uninstaller also removes the logon task.
 
-## Recommended drivers for Windows
+### Option B: portable zip
 
-From [system76/windows-drivers](https://github.com/system76/windows-drivers). The app
-shows the right page for your model.
+1. Extract **`S76FanControl-<version>-portable.zip`** to a permanent folder.
+2. Keep **`inpoutx64.dll`** next to **`S76FanControl.exe`**.
+3. Run `S76FanControl.exe` as administrator (it asks through UAC by itself).
 
-| Model | Package |
+Each release also includes **`SHA256SUMS.txt`** for verifying the downloads.
+
+### Requirements
+
+- Windows 10 or 11, 64-bit.
+- **Administrator rights.** Reading and writing the EC's I/O ports needs a kernel driver.
+- **Memory Integrity may block the driver.** If *Windows Security → Device security →
+  Core isolation → Memory integrity* is on, Windows may refuse to load the InpOut driver.
+  The dashboard then shows *"Cannot access the embedded controller"*. Windows 10 has it off
+  by default.
+
+### Windows SmartScreen
+
+The executables are not code-signed. On first launch, SmartScreen may show *"Windows
+protected your PC"*. Click **More info → Run anyway**. You can compare the files with
+`SHA256SUMS.txt`, or [build them yourself](#building-from-source).
+
+## Recommended Windows drivers for the addw3
+
+From the official [system76/windows-drivers](https://github.com/system76/windows-drivers)
+→ [`drivers/intel/rpl-hx`](https://github.com/system76/windows-drivers/tree/master/drivers/intel/rpl-hx)
+(package 2024-WW28):
+
+| Driver | Version | Installer |
+|---|---|---|
+| Intel Chipset | 10.1.19899.8597 | `SetupChipset.exe` |
+| Intel Serial IO | 30.100.2417.30 | `SetupSerialIO.exe` |
+| Intel Thunderbolt | Rev 93 | Thunderbolt(TM) Software Installer |
+| Intel Wi-Fi (AX211) | 23.60.1.2G | `UWD/Win64/Installer/WirelessSetup.exe` |
+
+Also install:
+
+- **NVIDIA GeForce driver**: get the latest one from
+  [nvidia.com](https://www.nvidia.com/Download/index.aspx).
+- **Everything else** (audio, card reader, …) comes from Windows Update.
+
+Devices that stay without a driver, which you can **safely ignore**:
+
+| Device ID | What it is |
 |---|---|
-| Adder WS addw3/addw4, Bonobo WS bonw15, Oryx Pro oryp12, Serval WS serw13 | [Intel RPL-HX](https://github.com/system76/windows-drivers/tree/master/drivers/intel/rpl-hx): Chipset, Serial IO, Thunderbolt, Wi-Fi |
-| addw5, bonw16, serw14 | [Intel ARL-HX](https://github.com/system76/windows-drivers/tree/master/drivers/intel/arl-hx) |
-| Other models | see the [repository README](https://github.com/system76/windows-drivers) |
+| `ACPI\17761776` | The System76 ACPI device. Its driver exists only for Linux (keyboard backlight, hotkeys, battery thresholds). On Windows the EC handles the Fn hotkeys itself. |
+| `ACPI\BOOT0000` | The coreboot tables device, which only Linux uses. |
 
-Also install the latest NVIDIA driver from nvidia.com. Windows Update provides the rest.
+The app's **Drivers & tips** page shows this list for your own machine.
 
-Device Manager may show devices with "no driver" that you can safely ignore:
+## Tips for a quieter addw3 on Windows
 
-- `ACPI\17761776` is the System76 ACPI device. Its driver exists only for Linux (keyboard
-  backlight and hotkeys). The EC handles the hotkeys itself.
-- `ACPI\BOOT0000` is the coreboot table device, which only Linux uses.
+The fans only spin hard because the CPU is hot. Lowering the heat helps more than any
+curve:
 
-## Tips for a quieter machine
+1. **Disable Turbo Boost.** Use the *Balanced* power plan. Then open *Control Panel →
+   Power Options → Change plan settings → Change advanced power settings → Processor power
+   management → Maximum processor state* and set it to **99 %** on battery and plugged in.
+   This removes the 5+ GHz boost and lowers temperatures a lot, while everyday tasks
+   stay fast.
+2. **Fn + 1** toggles the firmware's *maximum fan* mode. If the fans are stuck at 100 %,
+   press it once.
+3. **Watch for background processes.** Check Task Manager for anything that keeps one core
+   busy. A single busy core keeps the whole CPU boosting and hot.
+4. Keep the air intakes clear, and use a laptop stand for better airflow.
 
-- Use the **Balanced** power plan. Set *Processor power management → Maximum processor
-  state* to **99 %**. This disables Turbo Boost and lowers temperatures dramatically.
-- **Fn + 1** toggles the firmware's "max fan" mode. If the fans are stuck at 100 %, press
-  it once.
-- Look in Task Manager for background processes that keep one core busy. One busy core is
-  enough to keep the CPU boosting and hot.
+## Usage notes
 
-## Diagnostics
+- **Close button**: by default, closing the window keeps the app running in the tray. Use
+  the tray menu → *Quit (fans back to auto)* to exit.
+- **Settings file**: `%APPDATA%\S76FanControl\config.toml`. If a `config.toml` sits next to
+  the executable, the app uses that file instead (portable mode).
+- **Command line**
 
-```
-S76FanControl.exe --diag          # read-only report → %APPDATA%\S76FanControl\diag.txt
-S76FanControl.exe --diag --test   # also drives the fans to 30 % then 100 %, then back to auto
-```
-
-Settings are stored in `%APPDATA%\S76FanControl\config.toml`. If a `config.toml` sits next
-to the executable, the app uses that file instead (portable mode).
+  | Command | Effect |
+  |---|---|
+  | `S76FanControl.exe --minimized` | Start in the tray. |
+  | `S76FanControl.exe --quit` | Close a running instance cleanly. |
+  | `S76FanControl.exe --diag` | Read-only hardware report, saved to `%APPDATA%\S76FanControl\diag.txt`. |
+  | `S76FanControl.exe --diag --test` | Also drives the fans to 30 %, then 100 %, then gives them back to the firmware. |
 
 ## How it works
 
+```
+ S76FanControl.exe ──► inpoutx64.dll ──► InpOut kernel driver ──► I/O ports
+                                                                   │
+              0xE00–0xEFF  System76 EC command interface (SMFI) ◄──┤  fan PWM / mode / RPM
+              0x62 / 0x66  ACPI EC registers (read-only)        ◄──┘  CPU & GPU temperature
+```
+
 | What | How |
 |---|---|
-| EC commands | SMFI command interface at I/O ports `0xE00–0xEFF`: `PROBE`, `BOARD`, `VERSION`, `FAN_GET_PWM` (7), `FAN_SET_PWM` (8), `FAN_GET_RPM` (22), `FAN_GET_MODE` (23), `FAN_SET_MODE` (24) — see [`smfi.c`](https://github.com/system76/ec/blob/master/src/app/main/smfi.c) |
-| Temperatures | EC ACPI registers through ports `0x62/0x66`: `0x07` CPU (PECI), `0xCD` dGPU |
-| RPM on old firmware | Raw tachometer from ACPI `0xD0..0xD3`, converted like the firmware's `TACH_TO_RPM` |
+| EC detection | `PROBE` command; the signature must be `0x76 0xEC`. |
+| Fan control | `FAN_SET_PWM` (8); `FAN_SET_MODE` (24) on firmware that has it. |
+| Fan readings | `FAN_GET_PWM` (7), `FAN_GET_RPM` (22). On older firmware, the raw tachometer is read from ACPI `0xD0–0xD3`. |
+| Temperatures | ACPI register `0x07` (CPU, PECI) and `0xCD` (dGPU). |
 
-Source layout:
+The protocol comes from the open-source
+[system76/ec](https://github.com/system76/ec) firmware (`src/app/main/smfi.c`,
+`src/app/main/acpi.c`). Windows cannot reach I/O ports from user mode, so the app uses
+[InpOut32/x64](https://www.highrez.co.uk/downloads/inpout32/) (MIT). It is a small DLL with
+an embedded, signed kernel driver.
+
+### Source layout
 
 ```
 src/
   hw/            InpOut loader, SMFI protocol, ACPI EC reads, FanHardware trait
-  controller.rs  control thread + Governor (pure decision logic, unit-tested)
-  curve.rs       curve evaluation, presets, sanitising
+  controller.rs  control thread + Governor (pure, unit-tested decision logic)
+  curve.rs       curve evaluation, presets
   config.rs      TOML settings
   drivers.rs     model → System76 driver page mapping
-  platform.rs    single instance, autostart, device scan, Win32 helpers
+  platform.rs    single instance, --quit, autostart, device scan
   tray.rs        tray icon & menu
   ui/            egui app: theme, widgets, charts, pages
+installer/       Inno Setup script
+vendor/inpout/   inpoutx64.dll (MIT) + license
 ```
 
 ## Building from source
 
-Requirements: the Rust stable MSVC toolchain and the Windows SDK (for `rc.exe`).
+Requirements:
+
+- [Rust](https://rustup.rs) stable with the MSVC toolchain.
+- Visual Studio Build Tools with the Windows SDK (for `rc.exe`).
+- Optional: [Inno Setup 6](https://jrsoftware.org/isinfo.php), to build the installer.
 
 ```
-cargo build --release
 cargo test
+cargo build --release          # → target\release\S76FanControl.exe (+ inpoutx64.dll)
+iscc /DAppVersion=0.1.0 installer\S76FanControl.iss   # → dist\S76FanControl-0.1.0-setup.exe
 ```
 
-The build embeds the manifest (requires administrator, DPI aware) and the icon, which is
-drawn in code (`src/icon_art.rs`). It also copies `vendor/inpout/inpoutx64.dll` next to the
-executable.
+The icon is drawn in code (`src/icon_art.rs`). The build embeds it, together with an
+administrator manifest, into the executable.
 
-To regenerate the screenshots, run `S76FanControl.exe --screenshot <dir>`. The app captures
-each page as a BMP and exits.
+To regenerate the screenshots, run `S76FanControl.exe --screenshot <dir>`.
+
+**Releasing:** push a tag such as `v0.1.0`. GitHub Actions then builds and tests the code,
+creates the installer and the portable zip, and publishes a GitHub Release.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Third-party components:
+[MIT](LICENSE).
+
+Third-party components:
 
 - InpOut32/x64 © Phil Gibbons, MIT ([vendor/inpout/LICENSE.txt](vendor/inpout/LICENSE.txt)).
 - The EC protocol is documented from [system76/ec](https://github.com/system76/ec)
@@ -168,18 +289,59 @@ MIT, see [LICENSE](LICENSE). Third-party components:
 
 ## Tiếng Việt
 
-**S76 Fan Control** là tool điều khiển quạt cho laptop System76 chạy **Windows** với
-**System76 Open Firmware**.
+### Vấn đề
 
-- Có 3 chế độ: **Tự động** (firmware điều khiển), **Cố định**, và **Đường cong** (kéo thả
-  điểm, có sẵn các mẫu).
-- Tự trả quyền cho firmware khi thoát app, khi vượt nhiệt độ an toàn (mặc định 92 °C),
-  hoặc khi không đọc được nhiệt độ.
-- Trang **Driver & mẹo** gợi ý driver chính thức của System76 cho đúng model, quét các
-  thiết bị chưa có driver, và hướng dẫn giảm nhiệt.
-- Cài đặt: giải nén file zip trong mục Releases, giữ `inpoutx64.dll` cạnh file exe, chạy
-  với quyền Administrator. Có thể bật **Chạy cùng Windows** trong Cài đặt.
-- Mẹo giảm nhiệt:
-  - Dùng power plan **Balanced** và đặt *Maximum processor state* = **99 %** để tắt Turbo
-    Boost.
-  - **Fn + 1** bật/tắt chế độ quạt tối đa của firmware.
+Laptop **System76 Adder WS (addw3)** được bán kèm Pop!_OS (Linux). Trên Linux, System76 có
+`system76-power`, `system76-driver` và driver kernel `system76-acpi` để làm việc với bộ
+điều khiển nhúng (EC) mã nguồn mở của máy.
+
+**Trên Windows thì không có gì tương đương.** Trang driver chính thức
+[system76/windows-drivers](https://github.com/system76/windows-drivers) chỉ đưa cho addw3
+gói driver Intel RPL-HX (Chipset, Serial IO, Thunderbolt, Wi-Fi). Gói này **không có công
+cụ điều khiển quạt** và **không có driver cho thiết bị ACPI của System76**, thiết bị này
+hiện là *Unknown device* `ACPI\17761776` trong Device Manager.
+
+Vì vậy trên Windows 10, quạt chỉ chạy theo đường cong gốc của firmware: 80 °C là quạt chạy
+100 %. Trên máy tác giả, CPU i9-13900HX ở mức 74–91 °C dù tải chỉ 3 %. Kết quả là cả hai
+quạt luôn quay ~7.000 RPM và rất ồn.
+
+### Giải pháp
+
+**S76 Fan Control** giao tiếp trực tiếp với EC của System76 từ Windows, giống cách
+`system76_ectool` làm trên Linux. Tool có 3 chế độ:
+
+- **Tự động**: firmware tự điều khiển.
+- **Cố định**: chọn một tốc độ cố định.
+- **Đường cong**: kéo thả các điểm nhiệt độ → tốc độ.
+
+Ví dụ: đặt 30 % thì quạt giảm từ ~6.900 RPM xuống ~2.470 RPM.
+
+Tool tự **trả quyền cho firmware** trong các trường hợp sau:
+
+- khi thoát app;
+- khi vượt nhiệt độ an toàn (mặc định 92 °C);
+- khi không đọc được nhiệt độ.
+
+### Cài đặt
+
+1. Vào [Releases](https://github.com/congluuit/NANOSystem76Fan/releases/latest).
+2. Tải **`S76FanControl-<phiên bản>-setup.exe`** (bộ cài) hoặc bản **portable zip**.
+3. Chạy với quyền Administrator.
+
+Nếu SmartScreen cảnh báo, bấm **More info → Run anyway** (file chưa được ký số).
+
+### Driver nên cài cho addw3 (Windows 10)
+
+- Gói **Intel RPL-HX** từ
+  [system76/windows-drivers](https://github.com/system76/windows-drivers/tree/master/drivers/intel/rpl-hx):
+  Chipset, Serial IO, Thunderbolt, Wi-Fi.
+- **Driver NVIDIA** mới nhất từ nvidia.com.
+- Các driver còn lại do Windows Update tự cài.
+- `ACPI\17761776` và `ACPI\BOOT0000` không có driver Windows. Có thể bỏ qua.
+
+### Mẹo giảm nhiệt
+
+- Dùng power plan **Balanced**.
+- Đặt *Maximum processor state* = **99 %** để tắt Turbo Boost. Nhiệt độ sẽ giảm đáng kể.
+- **Fn + 1** bật/tắt chế độ quạt tối đa của firmware.
+- Kiểm tra Task Manager xem có app nào chạy nền chiếm một nhân CPU liên tục không.
