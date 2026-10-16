@@ -41,9 +41,11 @@ jobs:
           Copy-Item vendor/inpout/LICENSE.txt "dist/$name/LICENSE-InpOut.txt"
           Compress-Archive -Path "dist/$name/*" -DestinationPath "dist/$name.zip"
           Remove-Item -Recurse "dist/$name"
-          Get-ChildItem dist -File | ForEach-Object {
+          # Hash first, write afterwards: piping straight into dist/ would hash the sums file itself.
+          $sums = Get-ChildItem dist -File | ForEach-Object {
             "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
-          } | Out-File -Encoding ascii dist/SHA256SUMS.txt
+          }
+          $sums | Out-File -Encoding ascii dist/SHA256SUMS.txt
           Get-ChildItem dist
 
       - uses: softprops/action-gh-release@v2
